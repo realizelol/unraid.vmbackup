@@ -1,5 +1,45 @@
 # unraid.vmbackup plugin
 
+# NEED FIX
+
+### when device has an empty source (line will be deleted) --> then var "vdisk_path" is empty:
+#### vdisk_path="$(xmllint --xpath "string(/domain/devices/disk[$i]/source/@file)" "$vm.xml" 2>/dev/null)"
+
+### log:
+#### /tmp/vmbackup/scripts/default/user-script.sh: line 425: vdisk_types["$vdisk_path"]: bad array subscript
+
+```
+YEL='\033[1;33m'
+NC='\033[0m'
+cd /root
+cp /etc/libvirt/qemu/*.xml .
+vm_exists=$(virsh list --all --name)
+IFS=$'\n'
+for vm in ${vm_exists}
+do
+  echo -e "\n\n${YEL}${vm}:${NC}"
+  vdisk_count=$(xmllint --xpath "count(/domain/devices/disk/source/@file)" "$vm.xml" 2>/dev/null)
+  # get vdisk paths from config file.
+  for (( i=1; i<=vdisk_count; i++ ))
+  do
+    vdisk_path="$(xmllint --xpath "string(/domain/devices/disk[$i]/source/@file)" "$vm.xml" 2>/dev/null)"
+    vdisk_type="$(xmllint --xpath "string(/domain/devices/disk[$i]/driver/@type)" "$vm.xml" 2>/dev/null)"
+    vdisk_spec="$(xmllint --xpath "string(/domain/devices/disk[$i]/target/@dev)" "$vm.xml" 2>/dev/null)"
+
+    vdisks+=("$vdisk_path")
+    vdisk_types["$vdisk_path"]="$vdisk_type"
+    vdisk_specs["$vdisk_path"]="$vdisk_spec"
+
+    echo -e "\nVDISK ($i|$vdisk_count):"
+    echo -e "Path: $vdisk_path\nType: $vdisk_type\nTarget: $vdisk_spec"
+  done
+done; echo -e "\n"
+unset IFS
+# just to push "unset IFS" by copy&paste
+```
+
+
+
 ## currently in beta
 
 [![Donate](https://img.shields.io/badge/Donate-PayPal-green.svg)](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=NG5HGW4Q3CZU4&source=url "Donations are appreciated")
