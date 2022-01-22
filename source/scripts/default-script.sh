@@ -948,8 +948,6 @@ only_send_error_notifications="no_config"
 
           # dompmwakeup the vm.
           virsh dompmwakeup "$vm"
-
-          sleep 2
         fi
 
         # resume the vm if it is suspended, based on testing this should be instant but will trap later if it has not resumed.
@@ -958,9 +956,10 @@ only_send_error_notifications="no_config"
 
           # resume the vm.
           virsh resume "$vm"
-
-          sleep 2
         fi
+
+        # sleep 2 seconds before shutdown
+        sleep 2
 
         # attempt to cleanly shutdown the vm.
         virsh shutdown "$vm"
@@ -2285,7 +2284,7 @@ only_send_error_notifications="no_config"
         vm_state=$(virsh domstate "$vm")
 
         # start the vm after backup based on previous state.
-        if [ ! "$vm_state" == "$vm_original_state" ] && [ "$vm_original_state" == "running" ]; then
+        if [ ! "$vm_state" == "$vm_original_state" ] && ([ "$vm_original_state" == "running" ] || [ "$vm_original_state" == "pmsuspended" ]); then
 
           log_message "information: vm_state is $vm_state. vm_original_state is $vm_original_state. starting $vm." "script starting $vm" "normal"
 
@@ -2574,7 +2573,7 @@ only_send_error_notifications="no_config"
     else
 
       # start the vm based on previous state.
-      if [ "$vm_original_state" == "running" ]; then
+      if [ "$vm_original_state" == "running" ] || [ "$vm_original_state" == "pmsuspended" ]; then
 
         log_message "information: vm_state is $vm_state. vm_original_state is $vm_original_state. starting $vm." "script starting $vm" "normal"
 
