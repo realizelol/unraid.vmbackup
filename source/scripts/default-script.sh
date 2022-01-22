@@ -161,7 +161,7 @@ disable_delta_sync="no_config"
 # NOTE: rsync was significantly slower in my tests.
 rsync_only="no_config"
 
-# default is 1. set this to 0 if you would like to perform a dry-run backup. 
+# default is 1. set this to 0 if you would like to perform a dry-run backup.
 # NOTE: dry run will not work unless rsync_only is set to 1. if this is set to 1 rsync_only will be set to 1.
 actually_copy_files="no_config"
 
@@ -250,7 +250,7 @@ only_send_error_notifications="no_config"
       # set actually_copy_files based rsync_dry_run_option
       if [ "$rsync_dry_run_option" == "n" ]; then
         local actually_copy_files="0"
-      
+
       else
 
         local actually_copy_files="1"
@@ -270,7 +270,7 @@ only_send_error_notifications="no_config"
 
   # pass log messages to log files and system notifications.
   log_message () {
-    
+
     # assign arguments to local variables for readability.
     local message="$1"
     local description="$2"
@@ -328,7 +328,7 @@ only_send_error_notifications="no_config"
 
   # pass notification messages to system notifications.
   notification_message () {
-    
+
     # assign arguments to local variables for readability.
     local message="$1"
     local description="$2"
@@ -394,7 +394,7 @@ only_send_error_notifications="no_config"
 
     # assign arguments to local variables for readability.
     local mode="$1"
-    
+
     # get number of vdisks assoicated with the vm.
     vdisk_count=$(xmllint --xpath "count(/domain/devices/disk/source/@file)" "$vm.xml")
 
@@ -443,7 +443,7 @@ only_send_error_notifications="no_config"
 
         # assume disk will not be skipped.
         skip_disk="0"
-        
+
         # check to see if vdisk should be explicitly skipped.
         for skipvdisk_name in $vdisks_to_skip
         do
@@ -491,7 +491,7 @@ only_send_error_notifications="no_config"
           if [[ $disk =~ $vdisknameregex ]]; then
             disk_number=${BASH_REMATCH[0]}
           fi
-          
+
           # skip the vdisk if skip_disk is set to 1
           if [ "$skip_disk" -ne 1 ]; then
 
@@ -679,7 +679,7 @@ only_send_error_notifications="no_config"
                   elif [ "$skip_vm_shutdown" = true ]; then
                     can_backup_vm="y"
                     log_message "information: skip_vm_shutdown is $skip_vm_shutdown and use_snapshots is $use_snapshots. skipping vm shutdown procedure. $vm is $vm_state. can_backup_vm set to $can_backup_vm."
-                  
+
                   else
 
                     log_message "failure: skip_vm_shutdown is $skip_vm_shutdown and use_snapshots is $use_snapshots. skipping vm shutdown procedure. $vm is $vm_state. can_backup_vm set to $can_backup_vm." "$vm backup failed" "alert"
@@ -781,7 +781,7 @@ only_send_error_notifications="no_config"
     unset vdisk_extensions_find_cmd
     # initialize vdisk_extensions_find_cmd as empty array.
     vdisk_extensions_find_cmd=()
-    
+
     # find each vdisk extension and use it to build a find command.
     for extension in "${vdisk_extensions[@]}"
     do
@@ -823,7 +823,7 @@ only_send_error_notifications="no_config"
     unset remove_old_files_cmd
     # initialize remove_old_files_cmd as empty array.
     remove_old_files_cmd=()
-    
+
     # find each vdisk extension and use it to build a remove command.
     for extension in "${vdisk_extensions[@]}"
     do
@@ -915,7 +915,7 @@ only_send_error_notifications="no_config"
     else
       vm_desired_state="shut off"
     fi
-    
+
     # check to see if the vm is in the desired state.
     if [ "$vm_state" == "$vm_desired_state" ]; then
 
@@ -931,22 +931,35 @@ only_send_error_notifications="no_config"
       log_message "information: $vm is $vm_state. vm desired state is $vm_desired_state. can_backup_vm set to $can_backup_vm."
 
     # if the vm is running, try to get it to the desired state.
-    elif [ "$vm_state" == "running" ] || { [ "$vm_state" == "paused" ] && [ ! "$vm_desired_state" == "paused" ]; }; then
+    elif [ "$vm_state" == "running" ] || [ "$vm_state" == "pmsuspended" ] || \
+      { [ "$vm_state" == "paused" ] && [ ! "$vm_desired_state" == "paused" ]; }; then
       log_message "infomration: $vm is $vm_state. vm desired state is $vm_desired_state."
 
       if [ "$vm_desired_state" == "paused" ]; then
         # attempt to pause the vm.
         virsh suspend "$vm"
         log_message "information: $vm is $vm_state. vm desired state is $vm_desired_state. performing $clean_shutdown_checks $seconds_to_wait second cycles waiting for $vm to pause. "
-      
+
       elif [ "$vm_desired_state" == "shut off" ]; then
-        
+
+        # resume the vm if it is pmsuspended, based on testing this should be instant but will trap later if it has not resumed.
+        if [ "$vm_state" == "pmsuspended" ]; then
+          log_message "action: $vm is $vm_state. vm desired state is $vm_desired_state. resuming."
+
+          # dompmwakeup the vm.
+          virsh dompmwakeup "$vm"
+
+          sleep 2
+        fi
+
         # resume the vm if it is suspended, based on testing this should be instant but will trap later if it has not resumed.
         if [ "$vm_state" == "paused" ]; then
           log_message "action: $vm is $vm_state. vm desired state is $vm_desired_state. resuming."
 
           # resume the vm.
           virsh resume "$vm"
+
+          sleep 2
         fi
 
         # attempt to cleanly shutdown the vm.
@@ -1054,7 +1067,7 @@ only_send_error_notifications="no_config"
     notification_message "failure: official_script_name is $official_script_name. script file's name is $me. script name is invalid. exiting." "script failed" "alert"
 
     exit 1
-    
+
   fi
 
 
@@ -1331,7 +1344,7 @@ only_send_error_notifications="no_config"
     exit 1
 
   fi
-  
+
   # check to see if snapshots should be used. if yes, continue. if no, continue. if input invalid, exit.
   if [[ "$use_snapshots" =~ ^(0|1)$ ]]; then
 
@@ -1538,7 +1551,7 @@ only_send_error_notifications="no_config"
       log_message "failure: snapshot_extension is not set. exiting." "script failed" "alert"
 
       exit 1
-      
+
     fi
 
     # add snapshot extension to extensions_to_skip if it is not already present.
@@ -1973,7 +1986,7 @@ only_send_error_notifications="no_config"
       ignore_vm=false
 
       for vm in $vms_to_ignore
-      
+
       do
 
         if [ "$vmname" == "$vm" ]; then
@@ -1990,15 +2003,15 @@ only_send_error_notifications="no_config"
 
       # if vm should not be ignored, add it to the list of vms to backup.
       if [[ "$ignore_vm" = false ]]; then
-      
+
         if [[ -z "$vms_to_backup" ]]; then
-        
+
           vms_to_backup="$vmname"
 
         else
-          
+
           vms_to_backup="$vms_to_backup"$'\n'"$vmname"
-          
+
         fi
 
       fi
@@ -2009,7 +2022,7 @@ only_send_error_notifications="no_config"
 
   # create comma separated list of vms to backup for log file.
   for vm_to_backup in $vms_to_backup
-  
+
   do
 
     if [[ -z "$vms_to_backup_list" ]]; then
@@ -2023,7 +2036,7 @@ only_send_error_notifications="no_config"
     fi
 
   done
-  
+
   log_message "information: started attempt to backup $vms_to_backup_list to $backup_location"
 
   # check to see if reconstruct write should be enabled by this script. if so, enable and continue.
@@ -2154,7 +2167,7 @@ only_send_error_notifications="no_config"
 
       can_backup_vm="y"
       log_message "information: skip_vm_shutdown is $skip_vm_shutdown and use_snapshots is $use_snapshots. skipping vm shutdown procedure. $vm is $vm_state. can_backup_vm set to $can_backup_vm."
-    
+
     else
 
       log_message "failure: skip_vm_shutdown is $skip_vm_shutdown and use_snapshots is $use_snapshots. skipping vm shutdown procedure. $vm is $vm_state. can_backup_vm set to $can_backup_vm." "$vm backup failed" "alert"
@@ -2176,7 +2189,7 @@ only_send_error_notifications="no_config"
 
         # check if only one non-timestamped backup is being kept. if so, perform rsync without a timestamp. if not, continue as normal.
         if [ "$timestamp_files" -eq 0 ]  && [ "$number_of_backups_to_keep" -eq 1 ]; then
-        
+
           copy_file "$vm.xml" "$backup_location/$vm/$vm.xml" "$rsync_dry_run_option" "standard" "$rsync_only"
 
           # make sure copy has current date/time for modified attribute so that removing old backups by date will work.
@@ -2186,7 +2199,7 @@ only_send_error_notifications="no_config"
           run_compare "$vm.xml" "$backup_location/$vm/$vm.xml" "config"
 
         else
-        
+
           copy_file "$vm.xml" "$backup_location/$vm/$timestamp$vm.xml" "$rsync_dry_run_option" "standard" "$rsync_only"
 
           # make sure copy has current date/time for modified attribute so that removing old backups by date will work.
@@ -2231,7 +2244,7 @@ only_send_error_notifications="no_config"
             run_compare "$nvram_path" "$backup_location/$vm/$nvram_filename" "nvram"
 
           else
-          
+
             copy_file "$nvram_path" "$backup_location/$vm/$timestamp$nvram_filename" "$rsync_dry_run_option" "standard" "$rsync_only"
 
             # make sure copy has current date/time for modified attribute so that removing old backups by date will work.
@@ -2243,7 +2256,7 @@ only_send_error_notifications="no_config"
           fi
 
         fi
-              
+
       fi
 
 
@@ -2270,10 +2283,10 @@ only_send_error_notifications="no_config"
 
         # get the current state of the vm for checking against its orginal state.
         vm_state=$(virsh domstate "$vm")
-        
+
         # start the vm after backup based on previous state.
         if [ ! "$vm_state" == "$vm_original_state" ] && [ "$vm_original_state" == "running" ]; then
-          
+
           log_message "information: vm_state is $vm_state. vm_original_state is $vm_original_state. starting $vm." "script starting $vm" "normal"
 
           if [ "$vm_state" == "paused" ]; then
@@ -2287,7 +2300,7 @@ only_send_error_notifications="no_config"
             virsh start "$vm"
 
           else
-          
+
             # there was an error
             log_message "warning: vm_state is $vm_state. vm_original_state is $vm_original_state. unable to start $vm." "script cannot start $vm" "warning"
 
@@ -2318,7 +2331,7 @@ only_send_error_notifications="no_config"
             virsh start "$vm"
 
           else
-          
+
             # there was an error
             log_message "warning: vm_state is $vm_state. vm_original_state is $vm_original_state. unable to start $vm." "script cannot start $vm" "warning"
 
@@ -2339,13 +2352,13 @@ only_send_error_notifications="no_config"
           if [[ -n $("${vdisk_extensions_find_cmd[@]}") ]]; then
 
             new_image_files_exist=true
-            
+
             log_message "information: found new image files."
 
           else
 
             new_image_files_exist=false
-            
+
             log_message "warning: could not find new image files. backup may have failed." "no new image files for $vm" "warning"
 
           fi
@@ -2354,7 +2367,7 @@ only_send_error_notifications="no_config"
           if [[ "$backup_xml" -eq 1 ]] && [[ -n $(find "$backup_location/$vm" -type f \( -name '*.xml' \) ) ]]; then
 
             new_xml_files_exist=true
-            
+
             log_message "information: found new xml files."
 
           elif [[ "$backup_xml" -eq 0 ]]; then
@@ -2362,7 +2375,7 @@ only_send_error_notifications="no_config"
             new_xml_files_exist=true
 
             log_message "information: xml files not set to backup. skipping check."
-          
+
           else
 
             new_xml_files_exist=false
@@ -2383,7 +2396,7 @@ only_send_error_notifications="no_config"
             new_nvram_files_exist=true
 
             log_message "information: nvram files not set to backup. skipping check."
-          
+
           else
 
             new_nvram_files_exist=false
@@ -2415,11 +2428,11 @@ only_send_error_notifications="no_config"
 
             # for each extension, add it to the list of files to be backed up.
             for extension in "${vdisk_extensions[@]}"
-            
+
             do
-            
+
               find "$backup_location/$vm" -type f -name '*.'"$extension" -printf "%f\n" >> "$backup_file_list"
-            
+
             done
 
             # see if config files should be backed up and then add any to to the list of files to be backed up.
@@ -2462,11 +2475,11 @@ only_send_error_notifications="no_config"
             rm -fv "$backup_file_list"
 
             log_message "information: finished creating new tarball."
-            
+
             # remove config, nvram, and image files that were compressed.
             # build remove_old_files_cmd.
             build_remove_old_files_cmd "$backup_location/$vm/"
-            
+
             # execute remove_old_files_cmd to delelte files that were compressed.
             "${remove_old_files_cmd[@]}"
 
@@ -2497,11 +2510,11 @@ only_send_error_notifications="no_config"
 
           # for each extension, add it to the list of files to be backed up.
           for extension in "${vdisk_extensions[@]}"
-          
+
           do
-          
+
             find "$backup_location/$vm" -type f -name '*.'"$extension" -printf "%f\n" >> "$backup_file_list"
-          
+
           done
 
           # see if config files should be backed up and then add any to to the list of files to be backed up.
@@ -2562,7 +2575,7 @@ only_send_error_notifications="no_config"
 
       # start the vm based on previous state.
       if [ "$vm_original_state" == "running" ]; then
-        
+
         log_message "information: vm_state is $vm_state. vm_original_state is $vm_original_state. starting $vm." "script starting $vm" "normal"
 
         if [ "$vm_state" == "paused" ]; then
@@ -2576,7 +2589,7 @@ only_send_error_notifications="no_config"
             virsh start "$vm"
 
           else
-          
+
             # there was an error
             log_message "warning: vm_state is $vm_state. vm_original_state is $vm_original_state. unable to start $vm." "script cannot start $vm" "warning"
 
@@ -2607,7 +2620,7 @@ only_send_error_notifications="no_config"
           virsh start "$vm"
 
         else
-        
+
           # there was an error
           log_message "warning: vm_state is $vm_state. vm_original_state is $vm_original_state. unable to start $vm." "script cannot start $vm" "warning"
 
@@ -2622,7 +2635,7 @@ only_send_error_notifications="no_config"
 
     # check to see how many days backups should be kept.
     if [ "$number_of_days_to_keep_backups" -eq 0 ]; then
-    
+
       log_message "information: number of days to keep backups set to indefinitely."
 
     else
@@ -2662,7 +2675,7 @@ only_send_error_notifications="no_config"
 
     # check to see how many backups should be kept.
     if [ "$number_of_backups_to_keep" -eq 0 ]; then
-    
+
       log_message "information: number of backups to keep set to infinite."
 
     else
@@ -2746,7 +2759,7 @@ only_send_error_notifications="no_config"
     fi
 
     unset vm_log_file
-    
+
     # delete the working copy of the config.
     log_message "information: removing local $vm.xml."
     rm -fv "$vm.xml"
@@ -2769,7 +2782,7 @@ only_send_error_notifications="no_config"
   if [ "$keep_log_file" -eq 1 ]; then
 
     if [ "$number_of_log_files_to_keep" -eq 0 ]; then
-    
+
       log_message "information: number of logs to keep set to infinite."
 
     else
@@ -2830,7 +2843,7 @@ only_send_error_notifications="no_config"
   if [ "$keep_error_log_file" -eq 1 ]; then
 
     if [ "$number_of_error_log_files_to_keep" -eq 0 ]; then
-    
+
       log_message "information: number of error logs to keep set to infinite."
 
     else
@@ -2860,7 +2873,7 @@ only_send_error_notifications="no_config"
           log_message "information: did not find any error log files to remove." "script removing error logs" "normal"
 
         fi
-      
+
       else
 
         deleted_files=$(find "$backup_location/$log_file_subfolder"*unraid-vmbackup_error.log -type f -printf '%T@\t%p\n' | sort -t $'\t' -gr | tail -n +$error_log_files_plus_1 | cut -d $'\t' -f 2- | xargs -d '\n' -r rm -fv --)
@@ -2907,7 +2920,7 @@ only_send_error_notifications="no_config"
   if [ "$keep_log_file" -eq 0 ]; then
 
     if [ "$errors" -eq 1 ] && [ "$keep_error_log_file" -eq 1 ]; then
-    
+
       echo "$(date '+%Y-%m-%d %H:%M:%S') warning: removing log file." | tee -a "$backup_location/$log_file_subfolder$timestamp""unraid-vmbackup_error.log"
 
       rm -fv "$backup_location/$log_file_subfolder$timestamp""unraid-vmbackup.log"

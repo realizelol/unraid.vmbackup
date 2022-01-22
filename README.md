@@ -8,6 +8,8 @@
 ### log:
 #### /tmp/vmbackup/scripts/default/user-script.sh: line 425: vdisk_types["$vdisk_path"]: bad array subscript
 
+### already mentioned here: [#26](https://github.com/JTok/unraid.vmbackup/issues/26)
+
 ```
 YEL='\033[1;33m'
 NC='\033[0m'
@@ -37,6 +39,36 @@ done; echo -e "\n"
 unset IFS
 # just to push "unset IFS" by copy&paste
 ```
+
+
+
+
+## 2022-01-21 23:57:25 failure: Windows 11 is pmsuspended. vm desired state is shut off. can_backup_vm set to n.
+### 2022-01-21 23:57:26 information: vm_original_state is pmsuspended. not starting Windows 11.
+### 2022-01-21 23:57:26 failure: backup of Windows 11 to /mnt/user/ur-backup/vms/domains/Windows 11 failed.
+
+#### something like this:
+```
+#!/bin/bash
+#arrayStarted=true
+#noParity=true
+PATH=".:/usr/local/sbin:/usr/sbin:/sbin:/usr/local/bin:/usr/bin:/bin"
+export PATH=${PATH}
+
+########################################### script start pmsuspended vms start ##################################################
+
+virsh list --all --name | grep -v '^$' | while IFS="" read -r p || [ -n "$p" ]; do
+  if [[ "$(virsh domstate "${p}" | head -n1)" == "pmsuspended" ]]; then
+    virsh dompmwakeup "${p}"
+  fi
+done
+
+############################################ script start pmsuspended vms end ###################################################
+```
+
+
+## Domain Names contain "element" like "elementaryOS" will crack domain list
+### ==> will double all other domains
 
 
 
