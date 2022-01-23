@@ -44,7 +44,8 @@ vms_to_backup="no_config"
 vdisks_to_skip="no_config"
 
 # list of specific vdisk extensions to be skipped separated by a new line. this replaces the old ignore_isos variable.
-vdisk_extensions_to_skip="no_config"
+vdisk_extensions_to_skip="no_config
+nobk" ## need for dummy disk if source is empty
 
 # default is 0. use snapshots to backup vms.
 # NOTE: vms that are backed up using snapshots will not be shutdown. if a vm is already shutdown the default backup method will be used.
@@ -396,7 +397,7 @@ only_send_error_notifications="no_config"
     local mode="$1"
 
     # get number of vdisks assoicated with the vm.
-    vdisk_count=$(xmllint --xpath "count(/domain/devices/disk/source/@file)" "$vm.xml")
+    vdisk_count=$(xmllint --xpath "count(/domain/devices/disk/@device)" "$vm.xml" 2>/dev/null)
 
     # unset array for vdisks.
     unset vdisks
@@ -416,9 +417,12 @@ only_send_error_notifications="no_config"
     # get vdisk paths from config file.
     for (( i=1; i<=vdisk_count; i++ ))
     do
-      vdisk_path="$(xmllint --xpath "string(/domain/devices/disk[$i]/source/@file)" "$vm.xml")"
-      vdisk_type="$(xmllint --xpath "string(/domain/devices/disk[$i]/driver/@type)" "$vm.xml")"
-      vdisk_spec="$(xmllint --xpath "string(/domain/devices/disk[$i]/target/@dev)" "$vm.xml")"
+      vdisk_path="$(xmllint --xpath "string(/domain/devices/disk[$i]/source/@file)" "$vm.xml" 2>/dev/null)"
+      vdisk_type="$(xmllint --xpath "string(/domain/devices/disk[$i]/driver/@type)" "$vm.xml" 2>/dev/null)"
+      vdisk_spec="$(xmllint --xpath "string(/domain/devices/disk[$i]/target/@dev)" "$vm.xml" 2>/dev/null)"
+
+      # add fake diskimage if xml path has no source
+      if [ -z "$vdisk_path" ]; then vdisk_path=/tmp/dummy.nobk; fi
 
       vdisks+=("$vdisk_path")
       vdisk_types["$vdisk_path"]="$vdisk_type"

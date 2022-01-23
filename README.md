@@ -1,75 +1,22 @@
 # unraid.vmbackup plugin
 
-# NEED FIX
+## NEED FIX:
 
-### when device has an empty source (line will be deleted) --> then var "vdisk_path" is empty:
-#### vdisk_path="$(xmllint --xpath "string(/domain/devices/disk[$i]/source/@file)" "$vm.xml" 2>/dev/null)"
+### Domain Names contain "element" like "elementaryOS" will crack domain list
+> ###### will double all other domains, must be somewhere here:
+> `/usr/local/emhttp/plugins/vmbackup/include/javascript/vmbackup.js`
+> in function `rebuild_current_configs` or `append_new_config`
+> But my skills in javascript aren't good enough :(
+> <br/><br/>
 
-### log:
-#### /tmp/vmbackup/scripts/default/user-script.sh: line 425: vdisk_types["$vdisk_path"]: bad array subscript
+## FIXED:
 
-### already mentioned here: [#26](https://github.com/JTok/unraid.vmbackup/issues/26)
+### vdisk_path bad array subscript:
+https://github.com/JTok/unraid.vmbackup/issues/26
 
-```
-YEL='\033[1;33m'
-NC='\033[0m'
-cd /root
-cp /etc/libvirt/qemu/*.xml .
-vm_exists=$(virsh list --all --name)
-IFS=$'\n'
-for vm in ${vm_exists}
-do
-  echo -e "\n\n${YEL}${vm}:${NC}"
-  vdisk_count=$(xmllint --xpath "count(/domain/devices/disk/source/@file)" "$vm.xml" 2>/dev/null)
-  # get vdisk paths from config file.
-  for (( i=1; i<=vdisk_count; i++ ))
-  do
-    vdisk_path="$(xmllint --xpath "string(/domain/devices/disk[$i]/source/@file)" "$vm.xml" 2>/dev/null)"
-    vdisk_type="$(xmllint --xpath "string(/domain/devices/disk[$i]/driver/@type)" "$vm.xml" 2>/dev/null)"
-    vdisk_spec="$(xmllint --xpath "string(/domain/devices/disk[$i]/target/@dev)" "$vm.xml" 2>/dev/null)"
+## Added
 
-    vdisks+=("$vdisk_path")
-    vdisk_types["$vdisk_path"]="$vdisk_type"
-    vdisk_specs["$vdisk_path"]="$vdisk_spec"
-
-    echo -e "\nVDISK ($i|$vdisk_count):"
-    echo -e "Path: $vdisk_path\nType: $vdisk_type\nTarget: $vdisk_spec"
-  done
-done; echo -e "\n"
-unset IFS
-# just to push "unset IFS" by copy&paste
-```
-
-
-
-
-## 2022-01-21 23:57:25 failure: Windows 11 is pmsuspended. vm desired state is shut off. can_backup_vm set to n.
-### 2022-01-21 23:57:26 information: vm_original_state is pmsuspended. not starting Windows 11.
-### 2022-01-21 23:57:26 failure: backup of Windows 11 to /mnt/user/ur-backup/vms/domains/Windows 11 failed.
-
-#### something like this:
-```
-#!/bin/bash
-#arrayStarted=true
-#noParity=true
-PATH=".:/usr/local/sbin:/usr/sbin:/sbin:/usr/local/bin:/usr/bin:/bin"
-export PATH=${PATH}
-
-########################################### script start pmsuspended vms start ##################################################
-
-virsh list --all --name | grep -v '^$' | while IFS="" read -r p || [ -n "$p" ]; do
-  if [[ "$(virsh domstate "${p}" | head -n1)" == "pmsuspended" ]]; then
-    virsh dompmwakeup "${p}"
-  fi
-done
-
-############################################ script start pmsuspended vms end ###################################################
-```
-
-
-## Domain Names contain "element" like "elementaryOS" will crack domain list
-### ==> will double all other domains
-
+### Allow "pmsuspended" energysaved not hibernated machines
 
 
 ## currently in beta
