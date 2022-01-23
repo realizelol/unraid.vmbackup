@@ -44,8 +44,7 @@ vms_to_backup="no_config"
 vdisks_to_skip="no_config"
 
 # list of specific vdisk extensions to be skipped separated by a new line. this replaces the old ignore_isos variable.
-vdisk_extensions_to_skip="no_config
-nobk" ## need for dummy disk if source is empty
+vdisk_extensions_to_skip="no_config"
 
 # default is 0. use snapshots to backup vms.
 # NOTE: vms that are backed up using snapshots will not be shutdown. if a vm is already shutdown the default backup method will be used.
@@ -422,7 +421,7 @@ only_send_error_notifications="no_config"
       vdisk_spec="$(xmllint --xpath "string(/domain/devices/disk[$i]/target/@dev)" "$vm.xml" 2>/dev/null)"
 
       # add fake diskimage if xml path has no source
-      if [ -z "$vdisk_path" ]; then vdisk_path=/tmp/dummy.nobk; fi
+      if [ -z "$vdisk_path" ]; then vdisk_path=/tmp/dummy.nobkdummy; fi
 
       vdisks+=("$vdisk_path")
       vdisk_types["$vdisk_path"]="$vdisk_type"
@@ -473,7 +472,7 @@ only_send_error_notifications="no_config"
         for skipvdisk_extension in $vdisk_extensions_to_skip
         do
 
-          if [[ "$skipvdisk_extension" == "$disk_extension" ]]; then
+          if [[ "$skipvdisk_extension" == "$disk_extension" ]] || [[ "$disk_extension" == "nobkdummy" ]]; then
             skip_disk="1"
             log_message "information: extension for $disk on $vm was found in vdisks_extensions_to_skip. skipping disk."
           fi
@@ -1567,7 +1566,7 @@ only_send_error_notifications="no_config"
     do
 
       # if the extension already exists in the array set snap_exists to true and break out of the current loop.
-      if [ "$extension" == "$snapshot_extension" ]; then
+      if [ "$extension" == "$snapshot_extension" ] || [ "$snapshot_extension" == "nobkdummy" ]; then
 
         snap_exists=true
         break
@@ -1579,7 +1578,7 @@ only_send_error_notifications="no_config"
     # if snapshot extension was not found in the array, add it. else move on.
     if [ "$snap_exists" = false ]; then
 
-      vdisk_extensions_to_skip="$vdisk_extensions_to_skip"$'\n'"$snapshot_extension"
+      vdisk_extensions_to_skip="$vdisk_extensions_to_skip"$'\n'"$snapshot_extension$'\n'nobkdummy"
 
       log_message "information: snaphot extension not found in vdisk_extensions_to_skip. extension was added."
 

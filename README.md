@@ -9,14 +9,19 @@
 > But my skills in javascript aren't good enough :(
 > <br/><br/>
 
+
 ## FIXED:
 
 ### vdisk_path bad array subscript:
 https://github.com/JTok/unraid.vmbackup/issues/26
 
+
 ## Added
 
 ### Allow "pmsuspended" energysaved not hibernated machines
+
+
+------------
 
 
 ## currently in beta
