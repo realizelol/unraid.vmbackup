@@ -204,32 +204,32 @@ only_send_error_notifications="no_config"
     case "$sync_type" in
       "standard")
         # perform standard rsync.
-        rsync -av"$rsync_dry_run_option" "$source" "$destination"
+        rsync -av"$rsync_dry_run_option" "\"$source\"" "\"$destination\""
         local copy_result="$?"
         ;;
 
       "inline_zstd_compress")
         # perform inline zstd compression (with sparse file support).
-        zstd -$zstd_level -T$zstd_threads --sparse "$source" -o "$destination"
+        zstd -$zstd_level -T$zstd_threads --sparse "\"$source\"" -o "\"$destination\""
         local copy_result="$?"
         ;;
 
       "sparse")
         # perform rsync or copy with support for sparse files.
         if [ "$rsync_only" -eq 1 ]; then
-          rsync -av"$rsync_dry_run_option" --sparse "$source" "$destination"
+          rsync -av"$rsync_dry_run_option" --sparse "\"$source\"" "\"$destination\""
           local copy_result="$?"
 
         else
 
-          cp -av --sparse=always "$source" "$destination"
+          cp -av --sparse=always "\"$source\"" "\"$destination\""
           local copy_result="$?"
         fi
         ;;
 
       "inplace")
         # perform inplace copy (i.e. delta sync).
-        rsync -av"$rsync_dry_run_option" --inplace --no-whole-file "$source" "$destination"
+        rsync -av"$rsync_dry_run_option" --inplace --no-whole-file "\"$source\"" "\"$destination\""
         ;;
 
       *)
