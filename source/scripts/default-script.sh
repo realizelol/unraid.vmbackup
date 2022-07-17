@@ -947,7 +947,7 @@ only_send_error_notifications="no_config"
 
         # resume the vm if it is pmsuspended, based on testing this should be instant but will trap later if it has not resumed.
         if [ "$vm_state" == "pmsuspended" ]; then
-          log_message "action: $vm is $vm_state. vm desired state is $vm_desired_state. resuming."
+          log_message "action: $vm is $vm_state. vm desired state is $vm_desired_state. waking up."
 
           # dompmwakeup the vm.
           virsh dompmwakeup "$vm"
@@ -961,8 +961,9 @@ only_send_error_notifications="no_config"
           virsh resume "$vm"
         fi
 
-        # sleep 2 seconds before shutdown
-        sleep 2
+        # sleep 5 seconds before shutdown
+        # pmsuspended will go back to sleep after about 2min, so there's enough time.
+        sleep 5 # using $seconds_to_wait(default: 30seconds) here, to be more flexible?
 
         # attempt to cleanly shutdown the vm.
         virsh shutdown "$vm"
@@ -2324,20 +2325,20 @@ only_send_error_notifications="no_config"
 
         if [ "$vm_state" == "paused" ]; then
 
-            # resume vm
-            virsh resume "$vm"
+          # resume vm
+          virsh resume "$vm"
 
-          elif [ "$vm_state" == "shut off" ]; then
+        elif [ "$vm_state" == "shut off" ]; then
 
-            # start vm
-            virsh start "$vm"
+          # start vm
+          virsh start "$vm"
 
-          else
+        else
 
-            # there was an error
-            log_message "warning: vm_state is $vm_state. vm_original_state is $vm_original_state. unable to start $vm." "script cannot start $vm" "warning"
+          # there was an error
+          log_message "warning: vm_state is $vm_state. vm_original_state is $vm_original_state. unable to start $vm." "script cannot start $vm" "warning"
 
-          fi
+        fi
 
       fi
 
@@ -2582,20 +2583,20 @@ only_send_error_notifications="no_config"
 
         if [ "$vm_state" == "paused" ]; then
 
-            # resume vm
-            virsh resume "$vm"
+          # resume vm
+          virsh resume "$vm"
 
-          elif [ "$vm_state" == "shut off" ]; then
+        elif [ "$vm_state" == "shut off" ]; then
 
-            # start vm
-            virsh start "$vm"
+          # start vm
+          virsh start "$vm"
 
-          else
+        else
 
-            # there was an error
-            log_message "warning: vm_state is $vm_state. vm_original_state is $vm_original_state. unable to start $vm." "script cannot start $vm" "warning"
+          # there was an error
+          log_message "warning: vm_state is $vm_state. vm_original_state is $vm_original_state. unable to start $vm." "script cannot start $vm" "warning"
 
-          fi
+        fi
 
       else
 
