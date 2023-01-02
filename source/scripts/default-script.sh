@@ -2,7 +2,7 @@
 #backgroundOnly=true
 #arrayStarted=no_config
 #noParity=no_config
-#version=v0.2.1 - 2020/02/20
+#version=v0.2.5.1 - 2023/01/02
 
 # based on unraid-vmbackup script version:
 # v1.3.1 - 2020/01/21
@@ -65,16 +65,21 @@ number_of_days_to_keep_backups="no_config"
 # WARNING: If VM has multiple vdisks, then they must end in sequential numbers in order to be correctly backed up (i.e. vdisk1.img, vdisk2.img, etc.).
 number_of_backups_to_keep="no_config"
 
-# default is 0. set this to 1 if you would like to perform inline zstd compression.  This overrides the "pigz_compress" and "compare_files" options.
+# default is 0. set this to 1 if you would like to perform inline zstd compression.  This overrides the "gzip_compress" and "compare_files" options.
 inline_zstd_compress="no_config"
 
 # default is 0. set this to 1 if you would like to compress backups. This can add a significant amount of time to the backup process. uses tar.gz for sparse file compatibility.
-# this is the legacy setting for compression.
+# this is the legacy setting for compression. if include_extra_files is set to 1, this setting will be disabled.
 # WARNING: do not turn on if you already have uncompressed backups. You will need to move or delete uncompressed backups before using. this will compress all config, nvram, and vdisk images in the backup directory into ONE tarball.
-pigz_compress="no_config"
+gzip_compress="no_config"
 
 # default is 1. set this to 0 if you would like to have backups without a timestamp. Timestamps are dropped only when number_of_backups_to_keep is equal to 1.
 timestamp_files="no_config"
+
+# default is 0. set this to 1 if you want to backup any extra files and folders that are in the directory of each backed up vdisk.
+# this still honors vdisk_extensions_to_skip setting and vdisks_to_skip. this setting will be ignored if backup_vdisks is set to 0.
+# NOTE: This is not compatible with gzip_compress. enabling this will disable gzip compression.
+include_extra_files="no_config"
 
 
 #### logging and notifications ####
@@ -128,13 +133,9 @@ zstd_level="no_config"
 # default is 2. set this to the desired number of compression worker threads. set to 0 to auto detect the number of physical cpu cores.
 zstd_threads="no_config"
 
-# default is 6. choose the compression level for pigz to use. set to 1 for the lowest compression level, but the highest speed, and 9 is the highest compression level, but the lowest speed.
+# default is 6. choose the compression level for gzip to use. set to 1 for the lowest compression level, but the highest speed, and 9 is the highest compression level, but the lowest speed.
 # this is the legacy setting for compression.
-pigz_level="no_config"
-
-# default is 2. choose the number of threads for pigz to use. set to 0 to let pigz automatically choose the number of online processors.
-# this is the legacy setting for compression.
-pigz_threads="no_config"
+gzip_level="no_config"
 
 # default is 0. set this to 1 to compare files after copy and run rsync in the event of failure. could add significant amount of time depending on the size of vms.
 compare_files="no_config"
@@ -145,7 +146,7 @@ backup_xml="no_config"
 # default is 1. set to 0 if you would like to skip backing up nvram files.
 backup_nvram="no_config"
 
-# default is 1. set to 0 if you would like to skip backing up vdisks. setting this to 0 will automatically disable compression.
+# default is 1. set to 0 if you would like to skip backing up vdisks. setting this to 0 will automatically disable compression and include_extra_files.
 backup_vdisks="no_config"
 
 # default is 0. set this to 1 if you would like to start a vm after it has successfully been backed up. will override set_vm_to_original_state when set to 1.
@@ -232,6 +233,11 @@ only_send_error_notifications="no_config"
         rsync -av"${rsync_dry_run_option}" --inplace --no-whole-file "${source}" "${destination}"
         ;;
 
+      "mkpath")
+        # perform inplace copy (i.e. delta sync).
+        rsync -av"${rsync_dry_run_option}" --mkpath "${source}" "${destination}"
+        ;;
+
       *)
         # no valid copy choice was able to be ran.
         log_message "failure: no valid copy choice was able to run for copy of $source to $destination failed." "copy failed" "alert"
@@ -287,8 +293,8 @@ only_send_error_notifications="no_config"
         local is_error="1"
         ;;
       *)
-	      local is_error="0"
-    		;;
+        local is_error="0"
+        ;;
       esac
 
     if [ "$description" ] && [ "$importance" ]; then
@@ -528,6 +534,16 @@ only_send_error_notifications="no_config"
               # make sure copy has current date/time for modified attribute so that removing old backups by date will work.
               touch -d "now" "$backup_location/$vm/$timestamp$new_disk"
             fi
+
+            # check to see if extra files should be backed up.
+            if [ "${include_extra_files}" -eq 1 ]; then
+              # get the path of the disk without the filename.
+              disk_path=$(dirname "${disk}")
+
+              # call function copy_extra_files to copy any files and folders that are in the disk path.
+              copy_extra_files "${disk_path}" "${vm}" vdisks
+            fi
+
           fi
 
         elif [ "$mode" == "source_image" ]; then
@@ -768,8 +784,92 @@ only_send_error_notifications="no_config"
                 log_message "warning: snapshot performed for $vm, but vm state is $vm_state. cannot commit changes from snapshot." "script skipping $vm" "warning"
               fi
             fi
+
+            # check to see if extra files should be backed up.
+            if [ "${include_extra_files}" -eq 1 ]; then
+              # get the path of the disk without the filename.
+              disk_path=$(dirname "${disk}")
+
+              # call function copy_extra_files to copy any files and folders that are in the disk path.
+              copy_extra_files "${disk_path}" "${vm}" vdisks
+            fi
           fi
         fi
+      fi
+    done
+  }
+
+  # copy extra files.
+  copy_extra_files () {
+
+    # assign arguments to local variables for readability.
+    local _copy_path="${1}"
+    local _vm="${2}"
+    local -n _vdisks="${3}"
+
+    log_message "information: beginning copy of extra files in path: ${_copy_path} for VM ${_vm}." "script starting copy of extra files for ${_vm}" "normal"
+
+    # get a list of files in the directory of the disk.
+    extra_files=$(find "${_copy_path}" -type f)
+
+    # loop through the list of files and copy them to the backup location.
+    for extra_file in ${extra_files}
+    do
+
+      # assume file will not be skipped.
+      skip_file="0"
+
+      # get the extension of the file.
+      file_extension="${extra_file##*.}"
+
+      # disable case matching.
+      shopt -s nocasematch
+
+      # check to see if extra file is an existing vdisk
+      for disk in "${_vdisks[@]}"
+      do
+        # check to see if extra file is a vdisk.
+        if [[ "${extra_file}" == "${disk}" ]]; then
+          skip_file="1"
+          log_message "information: ${extra_file} on ${_vm} is a vdisk. skipping file."
+        fi
+      done
+
+      # check to see if extra file extension is the same as the snapshot extension. if it is, skip the file.
+      if [[ "${file_extension}" == "${snapshot_extension}" ]]; then
+        skip_file="1"
+        log_message "information: extension for ${extra_file} on ${_vm} is the same as the snapshot extension $snapshot_extension. This means this is probably the snapshot file and this message can be ignored." "cannot backup extra file on ${_vm}" "normal"
+      fi
+
+      # check to see if extra file should be skipped by extension.
+      for skipvdisk_extension in $vdisk_extensions_to_skip
+      do
+        if [[ "${file_extension}" == "${skipvdisk_extension}" ]]; then
+          skip_file="1"
+          log_message "information: extension for $extra_file on ${_vm} was found in vdisks_extensions_to_skip. skipping file."
+        fi
+      done
+
+      # re-enable case matching.
+      shopt -u nocasematch
+
+      # skip the extra file if skip_file is set to 1
+      if [ "${skip_file}" -ne 1 ]; then
+        # get the basename of the file to be copied.
+        extra_file_name=$(basename "${extra_file}")
+
+        # get the relative path of the file to be copied without the basename.
+        extra_file_relative_path=$(realpath --relative-base "${_copy_path}" "${extra_file}")
+        extra_file_relative_path=$(dirname "${extra_file_relative_path}")
+        # remove all periods from the relative path.
+        extra_file_relative_path=${extra_file_relative_path//./}
+
+        # copy the file to the backup location.
+        log_message "information: copy of backup of ${_copy_path}/${extra_file_relative_path}/${extra_file_name} file to ${backup_location}/${_vm}/${extra_file_relative_path}/${timestamp}${extra_file_name} starting." "script starting copy ${_vm} file ${extra_file}" "normal"
+        copy_file "${_copy_path}/${extra_file_relative_path}/${extra_file_name}" "${backup_location}/${_vm}/${extra_file_relative_path}/${timestamp}${extra_file_name}" "$rsync_dry_run_option" "mkpath"
+
+        # make sure copy has current date/time for modified attribute so that removing old backups by date will work.
+        touch -d "now" "${backup_location}/${_vm}/${extra_file_relative_path}/${timestamp}${extra_file_name}"
       fi
     done
   }
@@ -986,7 +1086,7 @@ only_send_error_notifications="no_config"
           log_message "information: $vm is $vm_state. vm desired state is $vm_desired_state."
 
           # if we have already exhausted our wait time set by the script variables then its time to do something else.
-          if [ $i = "$clean_shutdown_checks" ] ; then
+          if [ "$i" = "$clean_shutdown_checks" ] ; then
 
             # check if the user wants to kill the vm on failure of unclean shutdown.
             if [ "$kill_vm_if_cant_shutdown" -eq 1 ]; then
@@ -1483,12 +1583,19 @@ only_send_error_notifications="no_config"
 
   # check to see if vdisks should be inline compressed.
   if [[ ! "$inline_zstd_compress" =~ ^(0|1)$ ]]; then
+
     log_message "failure: inline_zstd_compress is $inline_zstd_compress. this is not a valid format. expecting [0 = no] or [1 = yes]. exiting." "script failed" "alert"
+
     exit 1
+
   elif [ "$inline_zstd_compress" -eq 0 ]; then
+
     log_message "information: inline_zstd_compress is $inline_zstd_compress. vdisk images will not be inline compressed."
+
   elif [ "$inline_zstd_compress" -eq 1 ]; then
+
     log_message "information: inline_zstd_compress is $inline_zstd_compress. vdisk images will be inline compressed but will not be compared afterwards or post compressed."
+
   fi
 
   # if inline_zstd_compress is enabled, check to see if zstd_level and zstd_threads are valid and in range.
@@ -1496,45 +1603,102 @@ only_send_error_notifications="no_config"
 
     # check to see if zstd_level is valid and in range.
     if [[ ! "$zstd_level" =~ ^[0-9]+$ ]]; then
+
       log_message "failure: zstd_level is $zstd_level. this is not a valid format. expecting a number between [1 - 19]. exiting." "script failed" "alert"
+
       exit 1
+
     elif [ "$zstd_level" -lt 1 ] || [ "$zstd_level" -gt 19 ] ; then
+
       log_message "failure: zstd_level is $zstd_level. expecting a number between [1 - 19]. exiting." "script failed" "alert"
+
       exit 1
+
     elif [ "$zstd_level" -gt 8 ] ; then
+
       log_message "warning: zstd_level is $zstd_level. this will be slower and may not produce meaningfully smaller backup images."
+
     else
+
       log_message "information: zstd_level is $zstd_level."
+
     fi
 
     # check to see if zstd_threads is valid and in range.
     if [[ ! "$zstd_threads" =~ ^[0-9]+$ ]]; then
+
       log_message "failure: zstd_threads is $zstd_threads. this is not a valid format. expecting a number between [0 - 200]. exiting." "script failed" "alert"
+
       exit 1
+
     elif [ "$zstd_threads" -lt 0 ] || [ "$zstd_threads" -gt 200 ] ; then
+
       log_message "failure: zstd_threads is $zstd_threads. expecting a number between [0 - 200]. exiting." "script failed" "alert"
+
       exit 1
+
     elif [ "$zstd_threads" -gt 4 ] ; then
+
       log_message "warning: zstd_threads is $zstd_threads. this is a lot of threads to use for compression."
+
     elif [ "$zstd_threads" -eq 0 ] ; then
+
       log_message "information: zstd_threads is $zstd_threads. the actual number of threads will be auto determined."
+
     else
+
       log_message "information: zstd_threads is $zstd_threads."
+
     fi
 
   fi
 
   # if inline_zstd_compress is disabled, check to see if backups should be post compressed.
   if [ "$inline_zstd_compress" -ne 1 ]; then
-    if [[ ! "$pigz_compress" =~ ^(0|1)$ ]]; then
-      log_message "failure: pigz_compress is $pigz_compress. this is not a valid format. expecting [0 = no] or [1 = yes]. exiting." "script failed" "alert"
+
+    if [[ ! "$gzip_compress" =~ ^(0|1)$ ]]; then
+
+      log_message "failure: gzip_compress is $gzip_compress. this is not a valid format. expecting [0 = no] or [1 = yes]. exiting." "script failed" "alert"
+
       exit 1
-    elif [ "$pigz_compress" -eq 0 ]; then
-      log_message "information: pigz_compress is $pigz_compress. backups will not be post compressed."
-    elif [ "$pigz_compress" -eq 1 ]; then
-      log_message "information: pigz_compress is $pigz_compress. backups will be post compressed."
+
+    elif [ "$gzip_compress" -eq 0 ]; then
+
+      log_message "information: gzip_compress is $gzip_compress. backups will not be post compressed."
+
+    elif [ "$gzip_compress" -eq 1 ]; then
+
+      log_message "information: gzip_compress is $gzip_compress. backups will be post compressed."
+
     fi
+
   fi
+
+
+    # check to see if extra files and folders should be included in the backup. if yes, continue. if no, continue. if input invalid, exit.
+  if [[ "$include_extra_files" =~ ^(0|1)$ ]]; then
+
+    if [ "$include_extra_files" -eq 0 ]; then
+
+      log_message "information: include_extra_files is $include_extra_files. extra files and folders will not be included in the backup."
+
+    elif [ "$include_extra_files" -eq 1 ]; then
+
+      log_message "information: include_extra_files is $include_extra_files. extra files and folders will be included in the backup. gzip legacy compression will be disabled."
+
+      gzip_compress="0"
+
+    fi
+
+  else
+
+    log_message "failure: include_extra_files is $include_extra_files. this is not a valid format. expecting [0 = no] or [1 = yes]. exiting." "script failed" "alert"
+
+    exit 1
+
+  fi
+
+
 
   #### advanced variables ####
 
@@ -1570,6 +1734,7 @@ only_send_error_notifications="no_config"
       if [ "$extension" == "$snapshot_extension" ] || [ "$snapshot_extension" == "nobkdummy" ]; then
 
         snap_exists=true
+
         break
 
       fi
@@ -1579,7 +1744,7 @@ only_send_error_notifications="no_config"
     # if snapshot extension was not found in the array, add it. else move on.
     if [ "$snap_exists" = false ]; then
 
-      vdisk_extensions_to_skip="$vdisk_extensions_to_skip"$'\n'"$snapshot_extension$'\n'nobkdummy"
+      vdisk_extensions_to_skip="$vdisk_extensions_to_skip"$'\n'"$snapshot_extension"$'\n'"nobkdummy"
 
       log_message "information: snaphot extension not found in vdisk_extensions_to_skip. extension was added."
 
@@ -1660,14 +1825,23 @@ only_send_error_notifications="no_config"
 
   # if inline_zstd_compress is disabled, check to see if files should be compared after backup.
   if [ "$inline_zstd_compress" -ne 1 ]; then
+
     if [[ ! "$compare_files" =~ ^(0|1)$ ]]; then
+
       log_message "failure: compare_files is $compare_files. this is not a valid format. expecting [0 = no] or [1 = yes]. exiting." "script failed" "alert"
+
       exit 1
+
     elif [ "$compare_files" -eq 0 ]; then
+
       log_message "information: compare_files is $compare_files. files will not be compared after backups."
+
     elif [ "$compare_files" -eq 1 ]; then
+
       log_message "information: compare_files is $compare_files. files will be compared after backups."
+
     fi
+
   fi
 
   # check to see if config should be backed up. if yes, continue. if no, continue. if input invalid, exit.
@@ -1721,7 +1895,7 @@ only_send_error_notifications="no_config"
 
       log_message "warning: backup_vdisks is $backup_vdisks. vms will not have their vdisks backed up. compression will be set to off."
 
-      pigz_compress="0"
+      gzip_compress="0"
 
     elif [ "$backup_vdisks" -eq 1 ]; then
 
@@ -1837,7 +2011,7 @@ only_send_error_notifications="no_config"
       rsync_dry_run_option="n"
 
       # set rsync_only variable to 1 so that dry run will work.
-	    rsync_only="1"
+      rsync_only="1"
 
     elif [ "$actually_copy_files" -eq 1 ]; then
 
@@ -2288,7 +2462,7 @@ only_send_error_notifications="no_config"
         vm_state=$(virsh domstate "$vm")
 
         # start the vm after backup based on previous state.
-        if [ ! "$vm_state" == "$vm_original_state" ] && ([ "$vm_original_state" == "running" ] || [ "$vm_original_state" == "pmsuspended" ]); then
+        if [ ! "$vm_state" == "$vm_original_state" ] && { [ "$vm_original_state" == "running" ] || [ "$vm_original_state" == "pmsuspended" ]; }; then
 
           log_message "information: vm_state is $vm_state. vm_original_state is $vm_original_state. starting $vm." "script starting $vm" "normal"
 
@@ -2343,7 +2517,7 @@ only_send_error_notifications="no_config"
       fi
 
       # check to see if backup files should be compressed.
-      if [ "$pigz_compress" -eq 1 ] && [ "$inline_zstd_compress" -ne 1 ]; then
+      if [ "$gzip_compress" -eq 1 ] && [ "$inline_zstd_compress" -ne 1 ]; then
 
         # check if only one non-timestamped backup is being kept. if so, perform compression without a timestamp. if not, continue as normal.
         if [ "$timestamp_files" -eq 0 ]  && [ "$number_of_backups_to_keep" -eq 1 ]; then
@@ -2462,16 +2636,13 @@ only_send_error_notifications="no_config"
             tar_cmd+=(-T)
             tar_cmd+=("$backup_file_list")
 
-            # build pigz command.
-            pigz_cmd=()
-            pigz_cmd=(pigz)
-            pigz_cmd+=(-"$pigz_level")
-            if [[ "$pigz_threads" -ne 0 ]]; then
-              pigz_cmd+=(-p "$pigz_threads")
-            fi
+            # build gzip command.
+            gzip_cmd=()
+            gzip_cmd=(gzip)
+            gzip_cmd+=(-"$gzip_level")
 
             # execute commands together to compress files
-            (cd "$backup_location/$vm/" && "${tar_cmd[@]}" | "${pigz_cmd[@]}" > "$backup_location/$vm/$vm.tar.gz")
+            (cd "$backup_location/$vm/" && "${tar_cmd[@]}" | "${gzip_cmd[@]}" > "$backup_location/$vm/$vm.tar.gz")
 
             # remove backup file list.
             log_message "information: removing backup file list at $backup_file_list."
@@ -2544,16 +2715,13 @@ only_send_error_notifications="no_config"
           tar_cmd+=(-T)
           tar_cmd+=("$backup_file_list")
 
-          # build pigz command.
-          pigz_cmd=()
-          pigz_cmd=(pigz)
-          pigz_cmd+=(-"$pigz_level")
-          if [[ "$pigz_threads" -ne 0 ]]; then
-            pigz_cmd+=(-p "$pigz_threads")
-          fi
+          # build gzip command.
+          gzip_cmd=()
+          gzip_cmd=(gzip)
+          gzip_cmd+=(-"$gzip_level")
 
           # execute commands together to compress files
-          (cd "$backup_location/$vm/" && "${tar_cmd[@]}" | "${pigz_cmd[@]}" > "$backup_location/$vm/$timestamp$vm.tar.gz")
+          (cd "$backup_location/$vm/" && "${tar_cmd[@]}" | "${gzip_cmd[@]}" > "$backup_location/$vm/$timestamp$vm.tar.gz")
 
           # remove backup file list.
           log_message "information: removing backup file list at $backup_file_list."
@@ -2665,7 +2833,7 @@ only_send_error_notifications="no_config"
       fi
 
       # remove old tarballs if pigz_compress is 1.
-      if [ "$pigz_compress" -eq 1 ]; then
+      if [ "$gzip_compress" -eq 1 ]; then
         find_cmd=(find "$backup_location/$vm/" -type f -name '*.tar.gz')
         remove_old_files find_cmd "tarball"
       fi
@@ -2748,8 +2916,8 @@ only_send_error_notifications="no_config"
         remove_over_limit_files vdisk_extensions_find_cmd "$number_of_files_to_keep" "vdisk image"
       fi
 
-      # remove tarball files that are over the limit if pigz_compress is 1.
-      if [ "$pigz_compress" -eq 1 ]; then
+      # remove tarball files that are over the limit if gzip_compress is 1.
+      if [ "$gzip_compress" -eq 1 ]; then
         find_cmd=(find "$backup_location/$vm/" -type f -name '*.tar.gz')
         remove_over_limit_files find_cmd "$number_of_backups_to_keep" "tarball"
       fi
