@@ -1149,9 +1149,26 @@ only_send_error_notifications="no_config"
     # if the vm is in a state that has not been explicitly defined then do nothing as it is unknown how to handle it.
     else
 
-      # set a flag to check later to indicate whether to backup this vm or not.
-      can_backup_vm="n"
-      log_message "failure: $vm is $vm_state. vm desired state is $vm_desired_state. can_backup_vm set to $can_backup_vm." "$vm backup failed" "alert"
+      # if the vm is running but the guesttools aren't responding -> destory vm
+      if ! virsh guestinfo "$vm" &>/dev/null && [ "$vm_state" == "running" ]; then virsh destroy "$vm"; sleep 1; fi
+
+      # recheck the state of the vm.
+      vm_state=$(virsh domstate "$vm")
+
+      if [ "$vm_state" == "$vm_desired_state" ]; then
+
+        # set a flag to check later to indicate whether to backup this vm or not.
+        can_backup_vm="y"
+        log_message "information: $vm is $vm_state. vm desired state after --destory-- is $vm_desired_state. can_backup_vm set to $can_backup_vm."
+
+      else
+
+        # set a flag to check later to indicate whether to backup this vm or not.
+        can_backup_vm="n"
+        log_message "failure: $vm is $vm_state. vm desired state is $vm_desired_state. can_backup_vm set to $can_backup_vm." "$vm backup failed" "alert"
+
+      fi
+
     fi
   }
 
